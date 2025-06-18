@@ -6,7 +6,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const start = async () => {
         const mindarThree = new MindARThree({
             container: document.body,
-            imageTargetSrc: "./examples/targets.mind",
+            imageTargetSrc: "targets.mind",
             maxTrack: 4,
             uiLoading: "yes",
             uiScanning: "yes",
@@ -14,6 +14,8 @@ document.addEventListener("DOMContentLoaded", () => {
         });
 
         const { renderer, scene, camera } = mindarThree;
+
+
 
         // Створюємо матеріали для фігур
         const materials = {
@@ -64,8 +66,10 @@ document.addEventListener("DOMContentLoaded", () => {
         const meshes = [];
         const infoElements = [];
 
+
+
         // Маркер 0 - Квадрат (Куб)
-        const anchor0 = mindarThree.addAnchor(0);
+        const anchor0 = mindarThree.addAnchor(3);
         const cube = new THREE.Mesh(geometries.cube, materials.cube);
         cube.position.set(0, 0.5, 0);
         cube.rotation.set(0.2, 0.2, 0);
@@ -74,7 +78,7 @@ document.addEventListener("DOMContentLoaded", () => {
         meshes.push(cube);
 
         // Маркер 1 - Коло (Сфера)
-        const anchor1 = mindarThree.addAnchor(1);
+        const anchor1 = mindarThree.addAnchor(0);
         const sphere = new THREE.Mesh(geometries.sphere, materials.sphere);
         sphere.position.set(0, 0.5, 0);
         anchor1.group.add(sphere);
@@ -82,7 +86,7 @@ document.addEventListener("DOMContentLoaded", () => {
         meshes.push(sphere);
 
         // Маркер 2 - Трикутник (Піраміда)
-        const anchor2 = mindarThree.addAnchor(2);
+        const anchor2 = mindarThree.addAnchor(1);
         const pyramid = new THREE.Mesh(geometries.pyramid, materials.pyramid);
         pyramid.position.set(0, 0.5, 0);
         pyramid.rotation.set(0, 0, 0);
@@ -91,7 +95,7 @@ document.addEventListener("DOMContentLoaded", () => {
         meshes.push(pyramid);
 
         // Маркер 3 - Прямокутник (Паралелепіпед)
-        const anchor3 = mindarThree.addAnchor(3);
+        const anchor3 = mindarThree.addAnchor(2);
         const parallelepiped = new THREE.Mesh(geometries.parallelepiped, materials.parallelepiped);
         parallelepiped.position.set(0, 0.4, 0);
         parallelepiped.rotation.set(0.1, 0.3, 0);
