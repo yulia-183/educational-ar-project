@@ -6,7 +6,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const start = async () => {
         const mindarThree = new MindARThree({
             container: document.body,
-            imageTargetSrc: "./markers/targets.mind",
+            imageTargetSrc: "targets.mind",
             maxTrack: 4,
             uiLoading: "yes",
             uiScanning: "yes",
