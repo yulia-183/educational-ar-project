@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Розгортка Куба</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(135deg, #1e3c72, #2a5298);
+            font-family: Arial, sans-serif;
+            overflow: hidden;
+        }
+        
+        #container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+        
+        #controls {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 100;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 10px;
+            color: white;
+        }
+        
+        .control-btn {
+            background: linear-gradient(45deg, #ff6b6b, #ee5a24);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            border-radius: 25px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+        }
+        
+        .control-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+        }
+        
+        .control-btn:active {
+            transform: translateY(0);
+        }
+        
+        #info {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            z-index: 100;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            border-radius: 8px;
+            color: white;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <div id="controls">
+            <h3>Управління Розгорткою Куба</h3>
+            <button class="control-btn" onclick="unfoldCube()">Розгорнути</button>
+            <button class="control-btn" onclick="foldCube()">Згорнути</button>
+            <button class="control-btn" onclick="resetView()">Скинути</button>
+        </div>
+        
+        <div id="info">
+            <strong>Керування:</strong><br>
+            • Миша: обертання камери<br>
+            • Колесо: масштабування<br>
+            • Кнопки: анімація розгортки
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        let scene, camera, renderer, cube, controls;
+        let faces = [];
+        let isUnfolded = false;
+        let isAnimating = false;
+        let autoRotate = false;
+        
+        // Орбітальні контролі
+        class OrbitControls {
+            constructor(camera, domElement) {
+                this.camera = camera;
+                this.domElement = domElement;
+                this.enabled = true;
+                this.autoRotate = false;
+                this.autoRotateSpeed = 2.0;
+                
+                this.mouseButtons = {
+                    LEFT: 0,
+                    MIDDLE: 1,
+                    RIGHT: 2
+                };
+                
+                this.target = new THREE.Vector3();
+                this.minDistance = 0;
+                this.maxDistance = Infinity;
+                
+                this.spherical = new THREE.Spherical();
+                this.sphericalDelta = new THREE.Spherical();
+                
+                this.scale = 1;
+                this.zoomSpeed = 1.0;
+                
+                this.rotateSpeed = 1.0;
+                
+                this.state = {
+                    NONE: -1,
+                    ROTATE: 0,
+                    DOLLY: 1,
+                    PAN: 2
+                };
+                
+                this.currentState = this.state.NONE;
+                
+                this.EPS = 0.000001;
+                
+                this.lastPosition = new THREE.Vector3();
+                this.lastQuaternion = new THREE.Quaternion();
+                
+                this.rotateStart = new THREE.Vector2();
+                this.rotateEnd = new THREE.Vector2();
+                this.rotateDelta = new THREE.Vector2();
+                
+                this.getAutoRotationAngle = () => 2 * Math.PI / 60 / 60 * this.autoRotateSpeed;
+                this.getZoomScale = () => Math.pow(0.95, this.zoomSpeed);
+                
+                this.rotateLeft = (angle) => {
+                    this.sphericalDelta.theta -= angle;
+                };
+                
+                this.rotateUp = (angle) => {
+                    this.sphericalDelta.phi -= angle;
+                };
+                
+                this.dollyIn = (dollyScale) => {
+                    this.scale /= dollyScale;
+                };
+                
+                this.dollyOut = (dollyScale) => {
+                    this.scale *= dollyScale;
+                };
+                
+                this.update = () => {
+                    const offset = new THREE.Vector3();
+                    const quat = new THREE.Quaternion().setFromUnitVectors(camera.up, new THREE.Vector3(0, 1, 0));
+                    const quatInverse = quat.clone().invert();
+                    
+                    const position = this.camera.position;
+                    
+                    offset.copy(position).sub(this.target);
+                    offset.applyQuaternion(quat);
+                    
+                    this.spherical.setFromVector3(offset);
+                    
+                    if (this.autoRotate && this.currentState === this.state.NONE) {
+                        this.rotateLeft(this.getAutoRotationAngle());
+                    }
+                    
+                    this.spherical.theta += this.sphericalDelta.theta;
+                    this.spherical.phi += this.sphericalDelta.phi;
+                    
+                    this.spherical.phi = Math.max(this.EPS, Math.min(Math.PI - this.EPS, this.spherical.phi));
+                    this.spherical.radius *= this.scale;
+                    this.spherical.radius = Math.max(this.minDistance, Math.min(this.maxDistance, this.spherical.radius));
+                    
+                    offset.setFromSpherical(this.spherical);
+                    offset.applyQuaternion(quatInverse);
+                    
+                    position.copy(this.target).add(offset);
+                    this.camera.lookAt(this.target);
+                    
+                    this.sphericalDelta.set(0, 0, 0);
+                    this.scale = 1;
+                    
+                    return true;
+                };
+                
+                this.onMouseDown = (event) => {
+                    if (!this.enabled) return;
+                    
+                    event.preventDefault();
+                    
+                    if (event.button === this.mouseButtons.LEFT) {
+                        this.currentState = this.state.ROTATE;
+                        this.rotateStart.set(event.clientX, event.clientY);
+                    }
+                };
+                
+                this.onMouseMove = (event) => {
+                    if (!this.enabled) return;
+                    
+                    event.preventDefault();
+                    
+                    if (this.currentState === this.state.ROTATE) {
+                        this.rotateEnd.set(event.clientX, event.clientY);
+                        this.rotateDelta.subVectors(this.rotateEnd, this.rotateStart);
+                        
+                        const element = this.domElement;
+                        
+                        this.rotateLeft(2 * Math.PI * this.rotateDelta.x / element.clientHeight * this.rotateSpeed);
+                        this.rotateUp(2 * Math.PI * this.rotateDelta.y / element.clientHeight * this.rotateSpeed);
+                        
+                        this.rotateStart.copy(this.rotateEnd);
+                    }
+                };
+                
+                this.onMouseUp = () => {
+                    if (!this.enabled) return;
+                    this.currentState = this.state.NONE;
+                };
+                
+                this.onMouseWheel = (event) => {
+                    if (!this.enabled) return;
+                    
+                    event.preventDefault();
+                    
+                    if (event.deltaY < 0) {
+                        this.dollyOut(this.getZoomScale());
+                    } else {
+                        this.dollyIn(this.getZoomScale());
+                    }
+                };
+                
+                this.domElement.addEventListener('mousedown', this.onMouseDown, false);
+                this.domElement.addEventListener('mousemove', this.onMouseMove, false);
+                this.domElement.addEventListener('mouseup', this.onMouseUp, false);
+                this.domElement.addEventListener('wheel', this.onMouseWheel, false);
+            }
+        }
+        
+        function init() {
+            // Сцена
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x1a1a2e);
+            
+            // Камера
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(12, 8, 12);
+            
+            // Рендерер
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            document.getElementById('container').appendChild(renderer.domElement);
+            
+            // Контроли
+            controls = new OrbitControls(camera, renderer.domElement);
+            
+            // Освітлення
+            const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
+            scene.add(ambientLight);
+            
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(10, 10, 5);
+            directionalLight.castShadow = true;
+            directionalLight.shadow.mapSize.width = 2048;
+            directionalLight.shadow.mapSize.height = 2048;
+            scene.add(directionalLight);
+            
+            const pointLight = new THREE.PointLight(0x00ff88, 0.3, 100);
+            pointLight.position.set(-10, 10, -10);
+            scene.add(pointLight);
+            
+            createCube();
+            animate();
+        }
+        
+        function createCube() {
+            cube = new THREE.Group();
+            
+            const size = 2;
+            
+            // Кольори для граней (як у класичних розгортках куба)
+            const colors = [
+                0xd63031, // Червоний - передня (центр хреста)
+                0x00b894, // Зелений - задня 
+                0x0984e3, // Синій - ліва
+                0xe17055, // Помаранчевий - права
+                0xfdcb6e, // Жовтий - верхня
+                0x6c5ce7  // Фіолетовий - нижня
+            ];
+            
+            const materials = colors.map((color, index) => {
+                const material = new THREE.MeshLambertMaterial({ 
+                    color: color,
+                    transparent: true,
+                    opacity: 0.9
+                });
+                return [material, new THREE.MeshLambertMaterial({ color: 0xcccccc, transparent: true, opacity: 0.3 })];
+            });
+            
+            // Створюємо куб з BoxGeometry та отримуємо доступ до окремих граней
+            const geometry = new THREE.BoxGeometry(size, size, size);
+            const cubeMesh = new THREE.Mesh(geometry, materials.map(m => m[0]));
+            
+            // Розділяємо куб на окремі грані
+            faces = [];
+            
+            // Створюємо окремі грані як PlaneGeometry
+            const planeGeometry = new THREE.PlaneGeometry(size, size);
+            
+            // Передня грань (центр хреста) - червона
+            const frontFace = new THREE.Mesh(planeGeometry, materials[0][0]);
+            frontFace.position.set(0, 0, size/2);
+            frontFace.userData = { 
+                originalPosition: new THREE.Vector3(0, 0, size/2), 
+                originalRotation: new THREE.Euler(0, 0, 0),
+                unfoldedPosition: new THREE.Vector3(0, 0, 0),
+                unfoldedRotation: new THREE.Euler(0, 0, 0),
+                name: 'front'
+            };
+            
+            // Задня грань - зелена
+            const backFace = new THREE.Mesh(planeGeometry, materials[1][0]);
+            backFace.position.set(0, 0, -size/2);
+            backFace.rotation.y = Math.PI;
+            backFace.userData = { 
+                originalPosition: new THREE.Vector3(0, 0, -size/2), 
+                originalRotation: new THREE.Euler(0, Math.PI, 0),
+                unfoldedPosition: new THREE.Vector3(-4, 0, 0),
+                unfoldedRotation: new THREE.Euler(0, 0, 0),
+                name: 'back'
+            };
+            
+            // Ліва грань - синя
+            const leftFace = new THREE.Mesh(planeGeometry, materials[2][0]);
+            leftFace.position.set(-size/2, 0, 0);
+            leftFace.rotation.y = -Math.PI/2;
+            leftFace.userData = { 
+                originalPosition: new THREE.Vector3(-size/2, 0, 0), 
+                originalRotation: new THREE.Euler(0, -Math.PI/2, 0),
+                unfoldedPosition: new THREE.Vector3(-2, 0, 0),
+                unfoldedRotation: new THREE.Euler(0, 0, 0),
+                name: 'left'
+            };
+            
+            // Права грань - помаранчева
+            const rightFace = new THREE.Mesh(planeGeometry, materials[3][0]);
+            rightFace.position.set(size/2, 0, 0);
+            rightFace.rotation.y = Math.PI/2;
+            rightFace.userData = { 
+                originalPosition: new THREE.Vector3(size/2, 0, 0), 
+                originalRotation: new THREE.Euler(0, Math.PI/2, 0),
+                unfoldedPosition: new THREE.Vector3(2, 0, 0),
+                unfoldedRotation: new THREE.Euler(0, 0, 0),
+                name: 'right'
+            };
+            
+            // Верхня грань - жовта
+            const topFace = new THREE.Mesh(planeGeometry, materials[4][0]);
+            topFace.position.set(0, size/2, 0);
+            topFace.rotation.x = -Math.PI/2;
+            topFace.userData = { 
+                originalPosition: new THREE.Vector3(0, size/2, 0), 
+                originalRotation: new THREE.Euler(-Math.PI/2, 0, 0),
+                unfoldedPosition: new THREE.Vector3(0, 2, 0),
+                unfoldedRotation: new THREE.Euler(0, 0, 0),
+                name: 'top'
+            };
+            
+            // Нижня грань - фіолетова
+            const bottomFace = new THREE.Mesh(planeGeometry, materials[5][0]);
+            bottomFace.position.set(0, -size/2, 0);
+            bottomFace.rotation.x = Math.PI/2;
+            bottomFace.userData = { 
+                originalPosition: new THREE.Vector3(0, -size/2, 0), 
+                originalRotation: new THREE.Euler(Math.PI/2, 0, 0),
+                unfoldedPosition: new THREE.Vector3(0, -2, 0),
+                unfoldedRotation: new THREE.Euler(0, 0, 0),
+                name: 'bottom'
+            };
+            
+            faces = [frontFace, backFace, leftFace, rightFace, topFace, bottomFace];
+            
+            faces.forEach(face => {
+                cube.add(face);
+                face.castShadow = true;
+                face.receiveShadow = true;
+                
+                // Додаємо рамку для кожної грані
+                const edgesGeometry = new THREE.EdgesGeometry(planeGeometry);
+                const edgesMaterial = new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 3 });
+                const edges = new THREE.LineSegments(edgesGeometry, edgesMaterial);
+                face.add(edges);
+            });
+            
+            scene.add(cube);
+        }
+        
+        function unfoldCube() {
+            if (isAnimating || isUnfolded) return;
+            isAnimating = true;
+            
+            const duration = 3000;
+            const startTime = Date.now();
+            
+            // Анімація розгортання з послідовними рухами
+            function animateUnfold() {
+                const elapsed = Date.now() - startTime;
+                const progress = Math.min(elapsed / duration, 1);
+                
+                faces.forEach((face, index) => {
+                    let faceProgress = progress;
+                    
+                    // Різні грані починають рухатись в різний час для більш реалістичної анімації
+                    if (face.userData.name === 'front') {
+                        faceProgress = progress; // Центральна грань залишається
+                    } else if (face.userData.name === 'left') {
+                        faceProgress = Math.max(0, (progress - 0.1) * 1.25);
+                    } else if (face.userData.name === 'right') {
+                        faceProgress = Math.max(0, (progress - 0.15) * 1.25);
+                    } else if (face.userData.name === 'top') {
+                        faceProgress = Math.max(0, (progress - 0.2) * 1.25);
+                    } else if (face.userData.name === 'bottom') {
+                        faceProgress = Math.max(0, (progress - 0.25) * 1.25);
+                    } else if (face.userData.name === 'back') {
+                        faceProgress = Math.max(0, (progress - 0.3) * 1.25);
+                    }
+                    
+                    faceProgress = Math.min(faceProgress, 1);
+                    const easeProgress = easeInOutCubic(faceProgress);
+                    
+                    const startPos = face.userData.originalPosition;
+                    const endPos = face.userData.unfoldedPosition;
+                    const startRot = face.userData.originalRotation;
+                    const endRot = face.userData.unfoldedRotation;
+                    
+                    face.position.lerpVectors(startPos, endPos, easeProgress);
+                    face.rotation.x = startRot.x + (endRot.x - startRot.x) * easeProgress;
+                    face.rotation.y = startRot.y + (endRot.y - startRot.y) * easeProgress;
+                    face.rotation.z = startRot.z + (endRot.z - startRot.z) * easeProgress;
+                });
+                
+                if (progress < 1) {
+                    requestAnimationFrame(animateUnfold);
+                } else {
+                    isAnimating = false;
+                    isUnfolded = true;
+                }
+            }
+            
+            animateUnfold();
+        }
+        
+        function foldCube() {
+            if (isAnimating || !isUnfolded) return;
+            isAnimating = true;
+            
+            const duration = 3000;
+            const startTime = Date.now();
+            
+            function animateFold() {
+                const elapsed = Date.now() - startTime;
+                const progress = Math.min(elapsed / duration, 1);
+                
+                faces.forEach((face, index) => {
+                    let faceProgress = progress;
+                    
+                    // Зворотний порядок складання
+                    if (face.userData.name === 'back') {
+                        faceProgress = Math.max(0, (progress - 0.1) * 1.25);
+                    } else if (face.userData.name === 'bottom') {
+                        faceProgress = Math.max(0, (progress - 0.15) * 1.25);
+                    } else if (face.userData.name === 'top') {
+                        faceProgress = Math.max(0, (progress - 0.2) * 1.25);
+                    } else if (face.userData.name === 'right') {
+                        faceProgress = Math.max(0, (progress - 0.25) * 1.25);
+                    } else if (face.userData.name === 'left') {
+                        faceProgress = Math.max(0, (progress - 0.3) * 1.25);
+                    } else {
+                        faceProgress = progress;
+                    }
+                    
+                    faceProgress = Math.min(faceProgress, 1);
+                    const easeProgress = easeInOutCubic(faceProgress);
+                    
+                    const startPos = face.userData.unfoldedPosition;
+                    const endPos = face.userData.originalPosition;
+                    const startRot = face.userData.unfoldedRotation;
+                    const endRot = face.userData.originalRotation;
+                    
+                    face.position.lerpVectors(startPos, endPos, easeProgress);
+                    face.rotation.x = startRot.x + (endRot.x - startRot.x) * easeProgress;
+                    face.rotation.y = startRot.y + (endRot.y - startRot.y) * easeProgress;
+                    face.rotation.z = startRot.z + (endRot.z - startRot.z) * easeProgress;
+                });
+                
+                if (progress < 1) {
+                    requestAnimationFrame(animateFold);
+                } else {
+                    isAnimating = false;
+                    isUnfolded = false;
+                }
+            }
+            
+            animateFold();
+        }
+        
+        function resetView() {
+            camera.position.set(12, 8, 12);
+            controls.target.set(0, 0, 0);
+            controls.update();
+        }
+        
+        function easeInOutCubic(t) {
+            return t < 0.5 ? 4 * t * t * t : (t - 1) * (2 * t - 2) * (2 * t - 2) + 1;
+        }
+        
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            controls.update();
+            renderer.render(scene, camera);
+        }
+        
+        // Обробка зміни розміру вікна
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+        
+        // Запуск
+        init();
+    </script>
+</body>
+</html>
